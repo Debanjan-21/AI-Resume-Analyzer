@@ -13,10 +13,12 @@ import {
   Layers,
   Award
 } from 'lucide-react';
-import { AnalysisResult, FastApiConfig } from './types';
+import { AnalysisResult, FastApiConfig, User, AuthState } from './types';
 import { SAMPLE_PROFILES, INITIAL_ANALYSIS } from './mockData';
 import { runClientSideAnalysis, analyzeWithFastApi, analyzeFileWithFastApi } from './services/analyzer';
+import { getCurrentAuth, logoutUser } from './services/authService';
 import { Header } from './components/Header';
+import { AuthGateway } from './components/AuthGateway';
 import { UploadAndJobInput } from './components/UploadAndJobInput';
 import { AtsScoreCard } from './components/AtsScoreCard';
 import { KeywordAnalysisCard } from './components/KeywordAnalysisCard';
@@ -35,10 +37,13 @@ export default function App() {
   const [targetCompany, setTargetCompany] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
-  const [analysisResult, setAnalysisResult] = useState<AnalysisResult>(INITIAL_ANALYSIS);
+  const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'all' | 'keywords' | 'bullets' | 'recruiter' | 'sections' | 'roles'>('all');
   const [notification, setNotification] = useState<{ type: 'success' | 'warning' | 'info'; message: string } | null>(null);
+
+  // Authentication state
+  const [authState, setAuthState] = useState<AuthState>(() => getCurrentAuth());
 
   // Modals
   const [isFastApiModalOpen, setIsFastApiModalOpen] = useState(false);
@@ -71,16 +76,8 @@ export default function App() {
   const [backendErrorMsg, setBackendErrorMsg] = useState<string | null>(null);
   const [isPinging, setIsPinging] = useState(false);
 
-  // History state
-  const [history, setHistory] = useState<AnalysisResult[]>(() => {
-    const saved = localStorage.getItem('resume_ai_scan_history');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {}
-    }
-    return [INITIAL_ANALYSIS];
-  });
+  // History state: isolated per authenticated user
+  const [history, setHistory] = useState<AnalysisResult[]>([]);
 
   // Check backend connectivity on mount
   useEffect(() => {
@@ -91,9 +88,54 @@ export default function App() {
     localStorage.setItem('resume_ai_fastapi_config', JSON.stringify(fastApiConfig));
   }, [fastApiConfig]);
 
+  // User-scoped History & Active Scan Isolation
   useEffect(() => {
-    localStorage.setItem('resume_ai_scan_history', JSON.stringify(history));
-  }, [history]);
+    // Clean up any legacy shared global storage key
+    localStorage.removeItem('resume_ai_scan_history');
+
+    if (authState.isAuthenticated && authState.user) {
+      const userKey = `resume_ai_scan_history_${authState.user.email.toLowerCase()}`;
+      const saved = localStorage.getItem(userKey);
+
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setHistory(parsed);
+            setAnalysisResult(parsed[0]);
+            if (parsed[0].rawResumeText) setResumeText(parsed[0].rawResumeText);
+            if (parsed[0].rawJobDescription) setJobDescription(parsed[0].rawJobDescription);
+            setTargetRole(parsed[0].targetRole || '');
+            setTargetCompany(parsed[0].targetCompany || '');
+            return;
+          }
+        } catch (e) {}
+      }
+
+      // If demo guest account, populate demo candidate
+      if (authState.user.email === 'alex.vance@techcorp.io') {
+        setHistory([INITIAL_ANALYSIS]);
+        setAnalysisResult(INITIAL_ANALYSIS);
+      } else {
+        // Authenticated user with no scans yet: clean private workspace
+        setHistory([]);
+        setAnalysisResult(null);
+        setResumeText('');
+        setJobDescription('');
+        setTargetRole('');
+        setTargetCompany('');
+        setSelectedFile(null);
+      }
+    } else {
+      setHistory([]);
+      setAnalysisResult(null);
+      setResumeText('');
+      setJobDescription('');
+      setTargetRole('');
+      setTargetCompany('');
+      setSelectedFile(null);
+    }
+  }, [authState.user?.email, authState.isAuthenticated]);
 
   const showNotification = (type: 'success' | 'warning' | 'info', message: string) => {
     setNotification({ type, message });
@@ -191,7 +233,12 @@ export default function App() {
       }
 
       setAnalysisResult(result);
-      setHistory((prev) => [result, ...prev.filter((p) => p.id !== result.id)].slice(0, 15));
+      const userKey = `resume_ai_scan_history_${(authState.user?.email || 'guest').toLowerCase()}`;
+      setHistory((prev) => {
+        const updated = [result, ...prev.filter((p) => p.id !== result.id)].slice(0, 15);
+        localStorage.setItem(userKey, JSON.stringify(updated));
+        return updated;
+      });
     } catch (err: any) {
       showNotification('warning', err.message || 'Error occurred during analysis.');
     } finally {
@@ -228,9 +275,42 @@ export default function App() {
 
   const handleClearHistory = () => {
     setHistory([]);
+    const userKey = `resume_ai_scan_history_${(authState.user?.email || 'guest').toLowerCase()}`;
+    localStorage.removeItem(userKey);
     localStorage.removeItem('resume_ai_scan_history');
-    showNotification('info', 'Scan history cleared.');
+    showNotification('info', 'Your scan history has been cleared.');
   };
+
+  const handleAuthSuccess = (user: User) => {
+    setAuthState({
+      isAuthenticated: true,
+      user,
+      token: 'session_active'
+    });
+    showNotification('success', `Welcome, ${user.name}! Workspace ready.`);
+  };
+
+  const handleLogout = () => {
+    logoutUser();
+    setAuthState({
+      isAuthenticated: false,
+      user: null,
+      token: null
+    });
+    setHistory([]);
+    setAnalysisResult(null);
+    setResumeText('');
+    setJobDescription('');
+    setTargetRole('');
+    setTargetCompany('');
+    setSelectedFile(null);
+    showNotification('info', 'Signed out successfully.');
+  };
+
+  // Auth Gating: Show high-converting, animated Sign-Up / Sign-In Gateway if unauthenticated
+  if (!authState.isAuthenticated) {
+    return <AuthGateway onAuthSuccess={handleAuthSuccess} />;
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
@@ -241,6 +321,8 @@ export default function App() {
         onOpenFastApiModal={() => setIsFastApiModalOpen(true)}
         onExport={() => setIsExportModalOpen(true)}
         hasResults={Boolean(analysisResult)}
+        user={authState.user}
+        onLogout={handleLogout}
       />
 
       {/* Floating Status Notification Toast */}

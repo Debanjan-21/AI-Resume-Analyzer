@@ -14,7 +14,7 @@ import { AnalysisResult } from '../types';
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  result: AnalysisResult;
+  result: AnalysisResult | null;
 }
 
 export const ExportModal: React.FC<ExportModalProps> = ({
@@ -24,7 +24,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 }) => {
   const [copied, setCopied] = useState(false);
 
-  if (!isOpen) return null;
+  if (!isOpen || !result) return null;
 
   const generateMarkdownSummary = () => {
     return `# ATS Resume Analysis Report

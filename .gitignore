@@ -16,6 +16,11 @@ frontend/.env.production.local
 !backend/.env.example
 !frontend/.env.example
 
+# Local user credential store & session data
+local_users.json
+backend/app/data/local_users.json
+backend/local_users.json
+
 # ==========================================
 # Python & Virtual Environments
 # ==========================================

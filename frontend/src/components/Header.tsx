@@ -1,9 +1,11 @@
 import React from 'react';
 import { 
   FileText, 
-  Printer 
+  Printer,
+  LogOut,
+  User as UserIcon
 } from 'lucide-react';
-import { FastApiConfig } from '../types';
+import { FastApiConfig, User } from '../types';
 
 interface HeaderProps {
   fastApiConfig?: FastApiConfig;
@@ -11,12 +13,21 @@ interface HeaderProps {
   onOpenFastApiModal?: () => void;
   onExport: () => void;
   hasResults: boolean;
+  user?: User | null;
+  onLogout?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   onExport,
-  hasResults
+  hasResults,
+  user,
+  onLogout
 }) => {
+  // Extract initial for avatar
+  const initials = user?.name
+    ? user.name.split(' ').map((n) => n[0]).join('').substring(0, 2).toUpperCase()
+    : 'U';
+
   return (
     <header className="border-b border-slate-800 bg-slate-900/90 backdrop-blur sticky top-0 z-30">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
@@ -38,8 +49,8 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right: Export Actions */}
-        <div className="flex items-center gap-2.5">
+        {/* Right: Export Actions & User Profile */}
+        <div className="flex items-center gap-3">
           {hasResults && (
             <button
               id="export-report-button"
@@ -49,6 +60,36 @@ export const Header: React.FC<HeaderProps> = ({
               <Printer className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Export Report</span>
             </button>
+          )}
+
+          {/* Authenticated User Status & Sign Out */}
+          {user && (
+            <div className="flex items-center gap-2.5 pl-2 border-l border-slate-800">
+              <div className="flex items-center gap-2 bg-slate-950/70 border border-slate-800/80 rounded-full py-1 pl-1 pr-3">
+                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-indigo-500 to-cyan-400 flex items-center justify-center text-xs font-bold text-white shadow-sm">
+                  {initials}
+                </div>
+                <div className="hidden md:flex flex-col text-left leading-tight">
+                  <span className="text-xs font-semibold text-slate-200 truncate max-w-[120px]">
+                    {user.name}
+                  </span>
+                  <span className="text-[10px] text-slate-400 truncate max-w-[120px]">
+                    {user.email}
+                  </span>
+                </div>
+              </div>
+
+              {onLogout && (
+                <button
+                  onClick={onLogout}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-slate-800 bg-slate-900 hover:bg-rose-950/40 hover:border-rose-500/30 text-slate-400 hover:text-rose-300 text-xs font-medium transition-all cursor-pointer"
+                  title="Sign out of your account"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Sign Out</span>
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>
