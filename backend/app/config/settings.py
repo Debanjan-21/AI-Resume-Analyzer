@@ -18,3 +18,12 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(
 )
 
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# Email Service: Resend API or standard SMTP
+RESEND_API_KEY = os.getenv("RESEND_API_KEY", "")
+SMTP_HOST = os.getenv("SMTP_HOST", "")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587") or 587)
+SMTP_USER = os.getenv("SMTP_USER", "")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+SMTP_FROM_EMAIL = os.getenv("SMTP_FROM_EMAIL", "") or SMTP_USER
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")

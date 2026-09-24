@@ -1,14 +1,16 @@
-from fastapi import APIRouter, HTTPException, Request, status, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+
 from app.dependencies.auth import get_current_user
-
 from app.schemas.user_schema import (
-    RegisterUserRequest,
+    ForgotPasswordRequest,
     LoginUserRequest,
+    MessageResponse,
+    RegisterUserRequest,
+    ResetPasswordRequest,
+    TokenResponse,
     UserResponse,
-    TokenResponse
 )
-
 from app.services.auth_service import AuthService
 
 router = APIRouter(
@@ -89,6 +91,54 @@ async def login_user(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Login error: {str(e)}",
         )
+
+
+@router.post(
+    "/forgot-password",
+    response_model=MessageResponse,
+)
+async def forgot_password(
+    request: ForgotPasswordRequest,
+):
+    """Initiates a password reset flow, generating a secure token and dispatching email."""
+    try:
+        return await AuthService.request_password_reset(request.email)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to process password reset: {str(e)}",
+        )
+
+
+@router.post(
+    "/reset-password",
+    response_model=MessageResponse,
+)
+async def reset_password(
+    request: ResetPasswordRequest,
+):
+    """Verifies the reset token and updates the user's password."""
+    try:
+        return await AuthService.reset_password(
+            token=request.token,
+            new_password=request.new_password,
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Password reset failed: {str(e)}",
+        )
+
 
 @router.get(
     "/me",

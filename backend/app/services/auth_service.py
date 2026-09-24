@@ -1,15 +1,21 @@
 import uuid
 from datetime import datetime, timezone
+
 from app.config.database import users_collection
 from app.models.user import UserModel
 from app.schemas.user_schema import (
     RegisterUserRequest,
+    TokenResponse,
     UserResponse,
-    TokenResponse
+)
+from app.services.email_service import EmailService
+from app.services.local_user_store import LocalUserStore
+from app.utils.jwt_handler import (
+    create_access_token,
+    create_reset_token,
+    verify_reset_token,
 )
 from app.utils.password import hash_password, verify_password
-from app.utils.jwt_handler import create_access_token
-from app.services.local_user_store import LocalUserStore
 
 
 class AuthService:
@@ -108,3 +114,69 @@ class AuthService:
         return TokenResponse(
             access_token=token
         )
+
+    @staticmethod
+    async def request_password_reset(email: str) -> dict:
+        email_clean = email.strip().lower()
+
+        # Check if user exists in database or local store
+        user = None
+        try:
+            if users_collection is not None:
+                user = await users_collection.find_one({"email": email_clean})
+        except Exception as e:
+            print(f"MongoDB notice during password reset request: {e}")
+
+        if not user:
+            user = LocalUserStore.find_by_email(email_clean)
+
+        if not user:
+            raise ValueError("No account found with this email address. Please register or verify spelling.")
+
+        token = create_reset_token(email_clean)
+        user_name = user.get("name") or email_clean.split("@")[0]
+
+        dispatched, reset_link = EmailService.send_password_reset_email(
+            to_email=email_clean,
+            reset_token=token,
+            recipient_name=user_name,
+        )
+
+        if not dispatched:
+            from app.config.settings import RESEND_API_KEY, SMTP_HOST, SMTP_USER, SMTP_PASSWORD
+            if not RESEND_API_KEY and (not SMTP_HOST or not SMTP_USER or not SMTP_PASSWORD):
+                raise ValueError(
+                    "Email service is not configured. Please add RESEND_API_KEY in backend/.env to send reset emails."
+                )
+            else:
+                raise ValueError(
+                    "Failed to deliver email through your email provider. Please check your RESEND_API_KEY or SMTP credentials in backend/.env."
+                )
+
+        return {
+            "message": f"A secure password reset link has been dispatched to {email_clean}. Please check your inbox and spam folder.",
+        }
+
+    @staticmethod
+    async def reset_password(token: str, new_password: str) -> dict:
+        # Validate token and extract email
+        email = verify_reset_token(token)
+
+        hashed_password = hash_password(new_password)
+
+        # Update in local store
+        LocalUserStore.update_password(email, hashed_password)
+
+        # Update in MongoDB if connected
+        try:
+            if users_collection is not None:
+                await users_collection.update_one(
+                    {"email": email.lower()},
+                    {"$set": {"hashed_password": hashed_password}}
+                )
+        except Exception as e:
+            print(f"MongoDB notice during password reset update: {e}")
+
+        return {
+            "message": "Your password has been successfully reset! You can now sign in with your new password."
+        }

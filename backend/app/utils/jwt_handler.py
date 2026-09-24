@@ -47,3 +47,44 @@ def verify_access_token(token: str) -> dict:
 
     except JWTError:
         raise ValueError("Invalid or expired token.")
+
+
+def create_reset_token(email: str) -> str:
+    """
+    Generate a signed JWT password reset token valid for 15 minutes.
+    """
+    expire = datetime.now(UTC) + timedelta(minutes=15)
+    payload = {
+        "sub": email.lower(),
+        "type": "password_reset",
+        "exp": expire,
+    }
+    return jwt.encode(
+        payload,
+        JWT_SECRET_KEY,
+        algorithm=JWT_ALGORITHM,
+    )
+
+
+def verify_reset_token(token: str) -> str:
+    """
+    Verify a password reset token and return the validated email.
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            JWT_SECRET_KEY,
+            algorithms=[JWT_ALGORITHM],
+        )
+
+        if payload.get("type") != "password_reset":
+            raise ValueError("Invalid token purpose.")
+
+        email = payload.get("sub")
+        if not email:
+            raise ValueError("Token missing user identity.")
+
+        return email
+
+    except JWTError:
+        raise ValueError("Password reset link is invalid or has expired.")

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   FileText, 
   ShieldCheck, 
@@ -6,25 +6,32 @@ import {
   Eye, 
   EyeOff, 
   ArrowRight, 
+  ArrowLeft,
   Lock, 
   Mail, 
   User as UserIcon, 
   CheckCircle2, 
   AlertCircle,
   Zap,
-  TrendingUp,
-  Cpu,
-  Target
+  Target,
+  KeyRound,
+  ExternalLink
 } from 'lucide-react';
 import { User } from '../types';
-import { loginUser, registerUser, loginDemoUser } from '../services/authService';
+import { 
+  loginUser, 
+  registerUser, 
+  loginDemoUser, 
+  requestPasswordReset, 
+  confirmPasswordReset 
+} from '../services/authService';
 
 interface AuthGatewayProps {
   onAuthSuccess: (user: User) => void;
 }
 
 export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
-  const [mode, setMode] = useState<'signin' | 'signup'>('signin');
+  const [mode, setMode] = useState<'signin' | 'signup' | 'forgot' | 'reset'>('signin');
   
   // Form fields
   const [name, setName] = useState('');
@@ -32,6 +39,15 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
+
+  // Forgot / Reset Password state
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotSubmitted, setForgotSubmitted] = useState(false);
+  const [resetToken, setResetToken] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmNewPassword, setShowConfirmNewPassword] = useState(false);
 
   // UI state
   const [showPassword, setShowPassword] = useState(false);
@@ -41,14 +57,29 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
   const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
+  // Check URL search parameters on mount for reset_token
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const token = params.get('reset_token');
+      if (token) {
+        setResetToken(token);
+        setMode('reset');
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (e) {
+      console.error('Failed to parse URL search params:', e);
+    }
+  }, []);
+
   // Password strength calculation
-  const passwordStrength = useMemo(() => {
-    if (!password) return { score: 0, label: '', color: 'bg-slate-700' };
+  const calculateStrength = (pwd: string) => {
+    if (!pwd) return { score: 0, label: '', color: 'bg-slate-700' };
     let score = 0;
-    if (password.length >= 8) score += 1;
-    if (/[A-Z]/.test(password)) score += 1;
-    if (/[0-9]/.test(password)) score += 1;
-    if (/[^A-Za-z0-9]/.test(password)) score += 1;
+    if (pwd.length >= 8) score += 1;
+    if (/[A-Z]/.test(pwd)) score += 1;
+    if (/[0-9]/.test(pwd)) score += 1;
+    if (/[^A-Za-z0-9]/.test(pwd)) score += 1;
 
     switch (score) {
       case 1:
@@ -62,38 +93,51 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
       default:
         return { score: 0, label: 'Too short', color: 'bg-rose-500' };
     }
-  }, [password]);
+  };
+
+  const passwordStrength = useMemo(() => calculateStrength(password), [password]);
+  const newPasswordStrength = useMemo(() => calculateStrength(newPassword), [newPassword]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
-    setTimeout(() => setToastMessage(null), 4000);
+    setTimeout(() => setToastMessage(null), 4500);
   };
 
   const validateForm = () => {
     const errors: { [key: string]: string } = {};
-
-    // Validate email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email.trim()) {
-      errors.email = 'Email is required';
-    } else if (!emailRegex.test(email.trim())) {
-      errors.email = 'Please enter a valid email address';
-    }
 
-    // Validate password
-    if (!password) {
-      errors.password = 'Password is required';
-    } else if (password.length < 8) {
-      errors.password = 'Password must be at least 8 characters';
-    }
-
-    // Sign up specific checks
-    if (mode === 'signup') {
-      if (!name.trim()) {
-        errors.name = 'Full name is required';
+    if (mode === 'signin' || mode === 'signup') {
+      if (!email.trim()) {
+        errors.email = 'Email is required';
+      } else if (!emailRegex.test(email.trim())) {
+        errors.email = 'Please enter a valid email address';
       }
-      if (password !== confirmPassword) {
-        errors.confirmPassword = 'Passwords do not match';
+
+      if (!password) {
+        errors.password = 'Password is required';
+      } else if (password.length < 8) {
+        errors.password = 'Password must be at least 8 characters';
+      }
+
+      if (mode === 'signup') {
+        if (!name.trim()) errors.name = 'Full name is required';
+        if (password !== confirmPassword) errors.confirmPassword = 'Passwords do not match';
+      }
+    } else if (mode === 'forgot') {
+      if (!forgotEmail.trim()) {
+        errors.forgotEmail = 'Email is required';
+      } else if (!emailRegex.test(forgotEmail.trim())) {
+        errors.forgotEmail = 'Please enter a valid email address';
+      }
+    } else if (mode === 'reset') {
+      if (!newPassword) {
+        errors.newPassword = 'New password is required';
+      } else if (newPassword.length < 8) {
+        errors.newPassword = 'Password must be at least 8 characters';
+      }
+      if (newPassword !== confirmNewPassword) {
+        errors.confirmNewPassword = 'Passwords do not match';
       }
     }
 
@@ -112,12 +156,23 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
       if (mode === 'signin') {
         const { user } = await loginUser(email.trim(), password, rememberMe);
         onAuthSuccess(user);
-      } else {
+      } else if (mode === 'signup') {
         const { user } = await registerUser(name.trim(), email.trim(), password);
         onAuthSuccess(user);
+      } else if (mode === 'forgot') {
+        const res = await requestPasswordReset(forgotEmail.trim());
+        setForgotSubmitted(true);
+        showToast(res.message || 'Password reset link sent!');
+      } else if (mode === 'reset') {
+        const res = await confirmPasswordReset(resetToken, newPassword);
+        showToast(res.message || 'Password reset successful! Please sign in.');
+        setEmail(forgotEmail || '');
+        setMode('signin');
+        setFormError(null);
+        setFieldErrors({});
       }
     } catch (err: any) {
-      setFormError(err.message || 'Authentication failed. Please try again.');
+      setFormError(err.message || 'Operation failed. Please try again.');
     } finally {
       setIsLoading(false);
     }
@@ -132,8 +187,12 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
     }, 450);
   };
 
-  const handleForgotPassword = () => {
-    showToast('A secure password reset link has been dispatched to your email address.');
+  const openForgotPassword = () => {
+    setForgotEmail(email);
+    setForgotSubmitted(false);
+    setFormError(null);
+    setFieldErrors({});
+    setMode('forgot');
   };
 
   return (
@@ -149,7 +208,7 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
       {/* Toast Notification */}
       {toastMessage && (
         <div className="fixed top-6 z-50 animate-in fade-in slide-in-from-top-4 duration-300">
-          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-indigo-950/90 text-indigo-200 border border-indigo-500/30 shadow-2xl backdrop-blur-md text-xs font-medium">
+          <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-indigo-950/90 text-indigo-200 border border-indigo-500/30 shadow-2xl backdrop-blur-md text-xs font-medium max-w-md">
             <CheckCircle2 className="w-4 h-4 text-indigo-400 shrink-0" />
             <span>{toastMessage}</span>
           </div>
@@ -190,7 +249,6 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
               
               {/* Abstract Resume Representation */}
               <div className="space-y-3.5 opacity-80">
-                {/* Header line */}
                 <div className="flex items-center gap-2.5 pb-3 border-b border-white/10">
                   <div className="w-7 h-7 rounded-full bg-indigo-500/30 flex items-center justify-center text-[10px] font-bold text-indigo-300">
                     JD
@@ -201,7 +259,6 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
                   </div>
                 </div>
 
-                {/* Simulated Experience Lines */}
                 <div className="space-y-2">
                   <div className="w-20 h-2 bg-slate-500/50 rounded-full" />
                   <div className="w-full h-1.5 bg-slate-700/60 rounded-full" />
@@ -209,7 +266,6 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
                   <div className="w-4/5 h-1.5 bg-slate-700/60 rounded-full" />
                 </div>
 
-                {/* Simulated Skills Tags */}
                 <div className="pt-2 flex flex-wrap gap-1.5">
                   <span className="text-[9px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
                     Python
@@ -223,14 +279,12 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
                 </div>
               </div>
 
-              {/* Holographic Glowing Badges floating */}
               <div className="absolute -bottom-1 -right-1 bg-indigo-900/90 border border-indigo-400/40 px-3 py-1.5 rounded-xl shadow-lg backdrop-blur-md flex items-center gap-1.5 text-[10px] font-bold text-indigo-200">
                 <Target className="w-3.5 h-3.5 text-cyan-400" />
                 <span>98% ATS Pass</span>
               </div>
             </div>
 
-            {/* Orbiting Satellite Badges */}
             <div className="absolute -top-3 -left-4 bg-slate-900/90 border border-cyan-500/30 px-3 py-1.5 rounded-xl shadow-xl backdrop-blur-md flex items-center gap-1.5 text-[10px] font-semibold text-cyan-300">
               <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
               <span>STAR Rewriter</span>
@@ -242,7 +296,6 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
             </div>
           </div>
 
-          {/* Bottom Social Proof / Feature Highlights */}
           <div className="relative z-10 pt-4 border-t border-white/5 grid grid-cols-2 gap-3 text-center">
             <div className="p-2.5 rounded-xl bg-white/[0.02] border border-white/5">
               <div className="text-base font-extrabold text-white">10,000+</div>
@@ -255,59 +308,105 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
           </div>
         </div>
 
-        {/* Right Column: Sliding Glassmorphic Sign In / Sign Up Form */}
+        {/* Right Column: Sliding Glassmorphic Form Card */}
         <div className="lg:col-span-7 p-8 sm:p-12 flex flex-col justify-center relative">
           
-          {/* Sliding Tab Switcher */}
-          <div className="w-full max-w-md mx-auto mb-8">
-            <div className="relative bg-slate-950/70 p-1.5 rounded-2xl border border-white/10 flex">
-              {/* Active pill background slider */}
-              <div 
-                className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 shadow-lg shadow-indigo-600/30 transition-all duration-300 ease-out ${
-                  mode === 'signin' ? 'left-1.5' : 'left-[calc(50%+3px)]'
-                }`}
-              />
-              
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('signin');
-                  setFormError(null);
-                  setFieldErrors({});
-                }}
-                className={`flex-1 py-2.5 text-center text-xs font-bold tracking-wide relative z-10 transition-colors cursor-pointer ${
-                  mode === 'signin' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Sign In
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setMode('signup');
-                  setFormError(null);
-                  setFieldErrors({});
-                }}
-                className={`flex-1 py-2.5 text-center text-xs font-bold tracking-wide relative z-10 transition-colors cursor-pointer ${
-                  mode === 'signup' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
-                }`}
-              >
-                Create Account
-              </button>
+          {/* Sliding Tab Switcher for Sign In / Create Account */}
+          {(mode === 'signin' || mode === 'signup') && (
+            <div className="w-full max-w-md mx-auto mb-8">
+              <div className="relative bg-slate-950/70 p-1.5 rounded-2xl border border-white/10 flex">
+                <div 
+                  className={`absolute top-1.5 bottom-1.5 w-[calc(50%-6px)] rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-500 shadow-lg shadow-indigo-600/30 transition-all duration-300 ease-out ${
+                    mode === 'signin' ? 'left-1.5' : 'left-[calc(50%+3px)]'
+                  }`}
+                />
+                
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('signin');
+                    setFormError(null);
+                    setFieldErrors({});
+                  }}
+                  className={`flex-1 py-2.5 text-center text-xs font-bold tracking-wide relative z-10 transition-colors cursor-pointer ${
+                    mode === 'signin' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('signup');
+                    setFormError(null);
+                    setFieldErrors({});
+                  }}
+                  className={`flex-1 py-2.5 text-center text-xs font-bold tracking-wide relative z-10 transition-colors cursor-pointer ${
+                    mode === 'signup' ? 'text-white' : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Create Account
+                </button>
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Form Header */}
           <div className="w-full max-w-md mx-auto mb-6">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-              {mode === 'signin' ? 'Welcome Back' : 'Get Started with AI'}
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-400 mt-1">
-              {mode === 'signin' 
-                ? 'Sign in to access your resume scans and role recommendations.'
-                : 'Supercharge your job hunt with instantaneous ATS diagnostics.'
-              }
-            </p>
+            {mode === 'forgot' ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('signin');
+                    setFormError(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 font-medium mb-3 cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to Sign In</span>
+                </button>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight flex items-center gap-2">
+                  <KeyRound className="w-6 h-6 text-indigo-400" />
+                  Reset Password
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-400 mt-1">
+                  Enter your registered email address and we'll send you recovery instructions.
+                </p>
+              </div>
+            ) : mode === 'reset' ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('signin');
+                    setFormError(null);
+                  }}
+                  className="inline-flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 font-medium mb-3 cursor-pointer"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  <span>Back to Sign In</span>
+                </button>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  Set New Password
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-400 mt-1">
+                  Create a secure, strong password to regain access to your account.
+                </p>
+              </div>
+            ) : (
+              <div>
+                <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+                  {mode === 'signin' ? 'Welcome Back' : 'Get Started with AI'}
+                </h1>
+                <p className="text-xs sm:text-sm text-slate-400 mt-1">
+                  {mode === 'signin' 
+                    ? 'Sign in to access your resume scans and role recommendations.'
+                    : 'Supercharge your job hunt with instantaneous ATS diagnostics.'
+                  }
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Alert / Error banner */}
@@ -333,199 +432,182 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
             </div>
           )}
 
-          {/* Form Container */}
-          <form onSubmit={handleSubmit} className="w-full max-w-md mx-auto space-y-4">
-            
-            {/* Full Name field (Sign Up only) */}
-            {mode === 'signup' && (
+          {/* FORGOT PASSWORD FORM */}
+          {mode === 'forgot' ? (
+            <div className="w-full max-w-md mx-auto space-y-4">
+              {forgotSubmitted ? (
+                <div className="space-y-4 animate-in fade-in duration-300">
+                  <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-500/30 text-emerald-200 text-xs flex items-start gap-3">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-semibold text-white">Reset Link Dispatched!</p>
+                      <p className="mt-1 text-slate-300 leading-relaxed">
+                        If an account exists for <span className="text-white font-medium">{forgotEmail}</span>, recovery instructions have been sent. Please check your inbox and spam folder.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMode('signin');
+                      setFormError(null);
+                    }}
+                    className="w-full py-2.5 rounded-xl border border-white/10 hover:border-slate-700 bg-slate-900/60 text-slate-300 hover:text-white text-xs font-semibold transition-all cursor-pointer"
+                  >
+                    Return to Sign In
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div className="relative">
+                    <div className="relative rounded-xl border border-white/10 bg-slate-950/60 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                        <Mail className="w-4 h-4" />
+                      </div>
+                      <input
+                        id="forgotEmail"
+                        type="email"
+                        value={forgotEmail}
+                        onChange={(e) => {
+                          setForgotEmail(e.target.value);
+                          if (fieldErrors.forgotEmail) setFieldErrors({ ...fieldErrors, forgotEmail: '' });
+                        }}
+                        placeholder=" "
+                        className="peer w-full pl-10 pr-4 pt-5 pb-2 text-sm text-white placeholder-transparent bg-transparent border-0 focus:outline-none"
+                      />
+                      <label
+                        htmlFor="forgotEmail"
+                        className="absolute text-xs text-slate-400 left-10 top-2 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:text-slate-500 peer-focus:top-2 peer-focus:text-xs peer-focus:text-indigo-400 pointer-events-none"
+                      >
+                        Registered Email Address
+                      </label>
+                    </div>
+                    {fieldErrors.forgotEmail && (
+                      <p className="text-[11px] text-rose-400 mt-1 pl-1 flex items-center gap-1">
+                        <AlertCircle className="w-3 h-3" /> {fieldErrors.forgotEmail}
+                      </p>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isLoading}
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/40 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                  >
+                    {isLoading ? (
+                      <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    ) : (
+                      <>
+                        <span>Send Recovery Link</span>
+                        <ArrowRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </form>
+              )}
+            </div>
+          ) : mode === 'reset' ? (
+            /* RESET PASSWORD FORM */
+            <form onSubmit={handleSubmit} className="w-full max-w-md mx-auto space-y-4">
               <div className="relative">
                 <div className="relative rounded-xl border border-white/10 bg-slate-950/60 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                    <UserIcon className="w-4 h-4" />
+                    <Lock className="w-4 h-4" />
                   </div>
                   <input
-                    id="fullName"
-                    type="text"
-                    value={name}
+                    id="newPassword"
+                    type={showNewPassword ? 'text' : 'password'}
+                    value={newPassword}
                     onChange={(e) => {
-                      setName(e.target.value);
-                      if (fieldErrors.name) setFieldErrors({ ...fieldErrors, name: '' });
+                      setNewPassword(e.target.value);
+                      if (fieldErrors.newPassword) setFieldErrors({ ...fieldErrors, newPassword: '' });
                     }}
                     placeholder=" "
-                    className="peer w-full pl-10 pr-4 pt-5 pb-2 text-sm text-white placeholder-transparent bg-transparent border-0 focus:outline-none"
+                    className="peer w-full pl-10 pr-10 pt-5 pb-2 text-sm text-white placeholder-transparent bg-transparent border-0 focus:outline-none"
                   />
                   <label
-                    htmlFor="fullName"
+                    htmlFor="newPassword"
                     className="absolute text-xs text-slate-400 left-10 top-2 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:text-slate-500 peer-focus:top-2 peer-focus:text-xs peer-focus:text-indigo-400 pointer-events-none"
                   >
-                    Full Name
+                    New Password
                   </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPassword(!showNewPassword)}
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    {showNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
                 </div>
-                {fieldErrors.name && (
+                {fieldErrors.newPassword && (
                   <p className="text-[11px] text-rose-400 mt-1 pl-1 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> {fieldErrors.name}
+                    <AlertCircle className="w-3 h-3" /> {fieldErrors.newPassword}
                   </p>
                 )}
-              </div>
-            )}
 
-            {/* Email Address */}
-            <div className="relative">
-              <div className="relative rounded-xl border border-white/10 bg-slate-950/60 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                  <Mail className="w-4 h-4" />
-                </div>
-                <input
-                  id="email"
-                  type="email"
-                  value={email}
-                  onChange={(e) => {
-                    setEmail(e.target.value);
-                    if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: '' });
-                  }}
-                  placeholder=" "
-                  className="peer w-full pl-10 pr-4 pt-5 pb-2 text-sm text-white placeholder-transparent bg-transparent border-0 focus:outline-none"
-                />
-                <label
-                  htmlFor="email"
-                  className="absolute text-xs text-slate-400 left-10 top-2 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:text-slate-500 peer-focus:top-2 peer-focus:text-xs peer-focus:text-indigo-400 pointer-events-none"
-                >
-                  Email Address
-                </label>
-              </div>
-              {fieldErrors.email && (
-                <p className="text-[11px] text-rose-400 mt-1 pl-1 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" /> {fieldErrors.email}
-                </p>
-              )}
-            </div>
-
-            {/* Password */}
-            <div className="relative">
-              <div className="relative rounded-xl border border-white/10 bg-slate-950/60 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
-                  <Lock className="w-4 h-4" />
-                </div>
-                <input
-                  id="password"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (fieldErrors.password) setFieldErrors({ ...fieldErrors, password: '' });
-                  }}
-                  placeholder=" "
-                  className="peer w-full pl-10 pr-10 pt-5 pb-2 text-sm text-white placeholder-transparent bg-transparent border-0 focus:outline-none"
-                />
-                <label
-                  htmlFor="password"
-                  className="absolute text-xs text-slate-400 left-10 top-2 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:text-slate-500 peer-focus:top-2 peer-focus:text-xs peer-focus:text-indigo-400 pointer-events-none"
-                >
-                  Password
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-              {fieldErrors.password && (
-                <p className="text-[11px] text-rose-400 mt-1 pl-1 flex items-center gap-1">
-                  <AlertCircle className="w-3 h-3" /> {fieldErrors.password}
-                </p>
-              )}
-
-              {/* Password Strength Meter (Sign Up Mode) */}
-              {mode === 'signup' && password && (
-                <div className="mt-2.5 px-1">
-                  <div className="flex items-center justify-between text-[11px] mb-1">
-                    <span className="text-slate-400">Password strength:</span>
-                    <span className={`font-semibold ${
-                      passwordStrength.score >= 3 ? 'text-emerald-400' : passwordStrength.score === 2 ? 'text-amber-400' : 'text-rose-400'
-                    }`}>
-                      {passwordStrength.label}
-                    </span>
+                {/* Password Strength Meter */}
+                {newPassword && (
+                  <div className="mt-2.5 px-1">
+                    <div className="flex items-center justify-between text-[11px] mb-1">
+                      <span className="text-slate-400">Password strength:</span>
+                      <span className={`font-semibold ${
+                        newPasswordStrength.score >= 3 ? 'text-emerald-400' : newPasswordStrength.score === 2 ? 'text-amber-400' : 'text-rose-400'
+                      }`}>
+                        {newPasswordStrength.label}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5 h-1.5">
+                      {[1, 2, 3, 4].map((step) => (
+                        <div
+                          key={step}
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            step <= newPasswordStrength.score ? newPasswordStrength.color : 'bg-slate-800'
+                          }`}
+                        />
+                      ))}
+                    </div>
                   </div>
-                  <div className="grid grid-cols-4 gap-1.5 h-1.5">
-                    {[1, 2, 3, 4].map((step) => (
-                      <div
-                        key={step}
-                        className={`h-full rounded-full transition-all duration-300 ${
-                          step <= passwordStrength.score ? passwordStrength.color : 'bg-slate-800'
-                        }`}
-                      />
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
 
-            {/* Confirm Password (Sign Up only) */}
-            {mode === 'signup' && (
               <div className="relative">
                 <div className="relative rounded-xl border border-white/10 bg-slate-950/60 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
                     <ShieldCheck className="w-4 h-4" />
                   </div>
                   <input
-                    id="confirmPassword"
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    value={confirmPassword}
+                    id="confirmNewPassword"
+                    type={showConfirmNewPassword ? 'text' : 'password'}
+                    value={confirmNewPassword}
                     onChange={(e) => {
-                      setConfirmPassword(e.target.value);
-                      if (fieldErrors.confirmPassword) setFieldErrors({ ...fieldErrors, confirmPassword: '' });
+                      setConfirmNewPassword(e.target.value);
+                      if (fieldErrors.confirmNewPassword) setFieldErrors({ ...fieldErrors, confirmNewPassword: '' });
                     }}
                     placeholder=" "
                     className="peer w-full pl-10 pr-10 pt-5 pb-2 text-sm text-white placeholder-transparent bg-transparent border-0 focus:outline-none"
                   />
                   <label
-                    htmlFor="confirmPassword"
+                    htmlFor="confirmNewPassword"
                     className="absolute text-xs text-slate-400 left-10 top-2 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:text-slate-500 peer-focus:top-2 peer-focus:text-xs peer-focus:text-indigo-400 pointer-events-none"
                   >
-                    Confirm Password
+                    Confirm New Password
                   </label>
                   <button
                     type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                    onClick={() => setShowConfirmNewPassword(!showConfirmNewPassword)}
                     className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
                   >
-                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    {showConfirmNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                {fieldErrors.confirmPassword && (
+                {fieldErrors.confirmNewPassword && (
                   <p className="text-[11px] text-rose-400 mt-1 pl-1 flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> {fieldErrors.confirmPassword}
+                    <AlertCircle className="w-3 h-3" /> {fieldErrors.confirmNewPassword}
                   </p>
                 )}
               </div>
-            )}
 
-            {/* Remember Me & Forgot Password (Sign In mode) */}
-            {mode === 'signin' && (
-              <div className="flex items-center justify-between text-xs pt-1">
-                <label className="flex items-center gap-2 text-slate-400 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={rememberMe}
-                    onChange={(e) => setRememberMe(e.target.checked)}
-                    className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-950"
-                  />
-                  <span>Remember me</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={handleForgotPassword}
-                  className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors cursor-pointer"
-                >
-                  Forgot password?
-                </button>
-              </div>
-            )}
-
-            {/* Submit Button */}
-            <div className="pt-2">
               <button
                 type="submit"
                 disabled={isLoading}
@@ -535,37 +617,249 @@ export const AuthGateway: React.FC<AuthGatewayProps> = ({ onAuthSuccess }) => {
                   <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                 ) : (
                   <>
-                    <span>{mode === 'signin' ? 'Sign In to Workspace' : 'Create Your Account'}</span>
+                    <span>Update Password & Continue</span>
                     <ArrowRight className="w-4 h-4" />
                   </>
                 )}
               </button>
-            </div>
-          </form>
+            </form>
+          ) : (
+            /* SIGN IN & SIGN UP FORM */
+            <form onSubmit={handleSubmit} className="w-full max-w-md mx-auto space-y-4">
+              
+              {/* Full Name field (Sign Up only) */}
+              {mode === 'signup' && (
+                <div className="relative">
+                  <div className="relative rounded-xl border border-white/10 bg-slate-950/60 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                      <UserIcon className="w-4 h-4" />
+                    </div>
+                    <input
+                      id="fullName"
+                      type="text"
+                      value={name}
+                      onChange={(e) => {
+                        setName(e.target.value);
+                        if (fieldErrors.name) setFieldErrors({ ...fieldErrors, name: '' });
+                      }}
+                      placeholder=" "
+                      className="peer w-full pl-10 pr-4 pt-5 pb-2 text-sm text-white placeholder-transparent bg-transparent border-0 focus:outline-none"
+                    />
+                    <label
+                      htmlFor="fullName"
+                      className="absolute text-xs text-slate-400 left-10 top-2 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:text-slate-500 peer-focus:top-2 peer-focus:text-xs peer-focus:text-indigo-400 pointer-events-none"
+                    >
+                      Full Name
+                    </label>
+                  </div>
+                  {fieldErrors.name && (
+                    <p className="text-[11px] text-rose-400 mt-1 pl-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" /> {fieldErrors.name}
+                    </p>
+                  )}
+                </div>
+              )}
 
-          {/* Quick Demo 1-Click Access Divider & Button */}
-          <div className="w-full max-w-md mx-auto mt-6 pt-6 border-t border-white/10">
-            <div className="flex items-center justify-center gap-2 mb-3">
-              <span className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
-                Instant Guest Evaluation
-              </span>
-            </div>
+              {/* Email Address */}
+              <div className="relative">
+                <div className="relative rounded-xl border border-white/10 bg-slate-950/60 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                    <Mail className="w-4 h-4" />
+                  </div>
+                  <input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => {
+                      setEmail(e.target.value);
+                      if (fieldErrors.email) setFieldErrors({ ...fieldErrors, email: '' });
+                    }}
+                    placeholder=" "
+                    className="peer w-full pl-10 pr-4 pt-5 pb-2 text-sm text-white placeholder-transparent bg-transparent border-0 focus:outline-none"
+                  />
+                  <label
+                    htmlFor="email"
+                    className="absolute text-xs text-slate-400 left-10 top-2 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:text-slate-500 peer-focus:top-2 peer-focus:text-xs peer-focus:text-indigo-400 pointer-events-none"
+                  >
+                    Email Address
+                  </label>
+                </div>
+                {fieldErrors.email && (
+                  <p className="text-[11px] text-rose-400 mt-1 pl-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {fieldErrors.email}
+                  </p>
+                )}
+              </div>
 
-            <button
-              type="button"
-              onClick={handleDemoLogin}
-              disabled={isLoading}
-              className="w-full py-2.5 px-4 rounded-xl border border-white/10 bg-slate-950/40 hover:bg-slate-800/60 text-slate-300 hover:text-white font-medium text-xs transition-all flex items-center justify-center gap-2 group cursor-pointer shadow-sm hover:border-indigo-500/30"
-            >
-              <Zap className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
-              <span>Explore Dashboard via 1-Click Demo</span>
-            </button>
-          </div>
+              {/* Password */}
+              <div className="relative">
+                <div className="relative rounded-xl border border-white/10 bg-slate-950/60 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                    <Lock className="w-4 h-4" />
+                  </div>
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => {
+                      setPassword(e.target.value);
+                      if (fieldErrors.password) setFieldErrors({ ...fieldErrors, password: '' });
+                    }}
+                    placeholder=" "
+                    className="peer w-full pl-10 pr-10 pt-5 pb-2 text-sm text-white placeholder-transparent bg-transparent border-0 focus:outline-none"
+                  />
+                  <label
+                    htmlFor="password"
+                    className="absolute text-xs text-slate-400 left-10 top-2 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:text-slate-500 peer-focus:top-2 peer-focus:text-xs peer-focus:text-indigo-400 pointer-events-none"
+                  >
+                    Password
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+                {fieldErrors.password && (
+                  <p className="text-[11px] text-rose-400 mt-1 pl-1 flex items-center gap-1">
+                    <AlertCircle className="w-3 h-3" /> {fieldErrors.password}
+                  </p>
+                )}
+
+                {/* Password Strength Meter (Sign Up Mode) */}
+                {mode === 'signup' && password && (
+                  <div className="mt-2.5 px-1">
+                    <div className="flex items-center justify-between text-[11px] mb-1">
+                      <span className="text-slate-400">Password strength:</span>
+                      <span className={`font-semibold ${
+                        passwordStrength.score >= 3 ? 'text-emerald-400' : passwordStrength.score === 2 ? 'text-amber-400' : 'text-rose-400'
+                      }`}>
+                        {passwordStrength.label}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5 h-1.5">
+                      {[1, 2, 3, 4].map((step) => (
+                        <div
+                          key={step}
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            step <= passwordStrength.score ? passwordStrength.color : 'bg-slate-800'
+                          }`}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Confirm Password (Sign Up only) */}
+              {mode === 'signup' && (
+                <div className="relative">
+                  <div className="relative rounded-xl border border-white/10 bg-slate-950/60 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/20 transition-all">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <input
+                      id="confirmPassword"
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => {
+                        setConfirmPassword(e.target.value);
+                        if (fieldErrors.confirmPassword) setFieldErrors({ ...fieldErrors, confirmPassword: '' });
+                      }}
+                      placeholder=" "
+                      className="peer w-full pl-10 pr-10 pt-5 pb-2 text-sm text-white placeholder-transparent bg-transparent border-0 focus:outline-none"
+                    />
+                    <label
+                      htmlFor="confirmPassword"
+                      className="absolute text-xs text-slate-400 left-10 top-2 transition-all peer-placeholder-shown:top-3.5 peer-placeholder-shown:text-sm peer-placeholder-shown:text-slate-500 peer-focus:top-2 peer-focus:text-xs peer-focus:text-indigo-400 pointer-events-none"
+                    >
+                      Confirm Password
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {fieldErrors.confirmPassword && (
+                    <p className="text-[11px] text-rose-400 mt-1 pl-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" /> {fieldErrors.confirmPassword}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Remember Me & Forgot Password (Sign In mode) */}
+              {mode === 'signin' && (
+                <div className="flex items-center justify-between text-xs pt-1">
+                  <label className="flex items-center gap-2 text-slate-400 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(e) => setRememberMe(e.target.checked)}
+                      className="w-4 h-4 rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-indigo-500 focus:ring-offset-slate-950"
+                    />
+                    <span>Remember me</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={openForgotPassword}
+                    className="text-indigo-400 hover:text-indigo-300 font-medium transition-colors cursor-pointer"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
+              )}
+
+              {/* Submit Button */}
+              <div className="pt-2">
+                <button
+                  type="submit"
+                  disabled={isLoading}
+                  className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 via-indigo-500 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white font-semibold text-sm shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/40 hover:scale-[1.01] active:scale-[0.99] transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isLoading ? (
+                    <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : (
+                    <>
+                      <span>{mode === 'signin' ? 'Sign In to Workspace' : 'Create Your Account'}</span>
+                      <ArrowRight className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Quick Demo 1-Click Access (Sign In / Sign Up modes) */}
+          {(mode === 'signin' || mode === 'signup') && (
+            <div className="w-full max-w-md mx-auto mt-6 pt-6 border-t border-white/10">
+              <div className="flex items-center justify-center gap-2 mb-3">
+                <span className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">
+                  Instant Guest Evaluation
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDemoLogin}
+                disabled={isLoading}
+                className="w-full py-2.5 px-4 rounded-xl border border-white/10 bg-slate-950/40 hover:bg-slate-800/60 text-slate-300 hover:text-white font-medium text-xs transition-all flex items-center justify-center gap-2 group cursor-pointer shadow-sm hover:border-indigo-500/30"
+              >
+                <Zap className="w-4 h-4 text-cyan-400 group-hover:scale-110 transition-transform" />
+                <span>Explore Dashboard via 1-Click Demo</span>
+              </button>
+            </div>
+          )}
         </div>
 
       </div>
 
-      {/* Footer copyright and attribution */}
+      {/* Footer attribution */}
       <div className="mt-8 text-center text-xs text-slate-500 flex items-center gap-3">
         <span>Protected by 256-bit Encryption</span>
         <span>•</span>

@@ -42,3 +42,13 @@ class LocalUserStore:
         email = user_doc["email"].strip().lower()
         users[email] = user_doc
         cls._save(users)
+
+    @classmethod
+    def update_password(cls, email: str, hashed_password: str) -> bool:
+        users = cls._load()
+        clean_email = email.strip().lower()
+        if clean_email in users:
+            users[clean_email]["hashed_password"] = hashed_password
+            cls._save(users)
+            return True
+        return False

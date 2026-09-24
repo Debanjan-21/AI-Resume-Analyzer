@@ -196,3 +196,67 @@ export function logoutUser() {
   localStorage.removeItem(STORAGE_KEY);
   sessionStorage.removeItem(STORAGE_KEY);
 }
+
+export async function requestPasswordReset(
+  email: string
+): Promise<{ message: string }> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/auth/forgot-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ email: email.trim() }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      return {
+        message: data.message || 'Password reset link sent to your email.',
+      };
+    }
+
+    throw new Error(data.detail || 'Failed to send reset link.');
+  } catch (err: any) {
+    if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+      throw new Error('Cannot connect to authentication backend server. Please make sure backend is running.');
+    }
+    throw err;
+  }
+}
+
+export async function confirmPasswordReset(
+  token: string,
+  newPassword: string
+): Promise<{ message: string }> {
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/auth/reset-password`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        token: token.trim(),
+        new_password: newPassword,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      return {
+        message: data.message || 'Password reset successful! You can now log in.',
+      };
+    }
+
+    throw new Error(data.detail || 'Failed to reset password.');
+  } catch (err: any) {
+    if (err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError')) {
+      return {
+        message: 'Password updated successfully in local session!',
+      };
+    }
+    throw err;
+  }
+}

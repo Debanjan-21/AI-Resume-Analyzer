@@ -52,3 +52,34 @@ class TokenResponse(BaseModel):
 
     access_token: str
     token_type: str = "bearer"
+
+
+class ForgotPasswordRequest(BaseModel):
+    """
+    Request model to initiate a password reset.
+    """
+
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    """
+    Request model to confirm a new password using a reset token.
+    """
+
+    token: str
+    new_password: str = Field(
+        ...,
+        min_length=8,
+        max_length=128,
+        description="New password"
+    )
+
+
+class MessageResponse(BaseModel):
+    """
+    General message response.
+    """
+
+    message: str
+    dev_reset_link: str | None = None
