@@ -105,7 +105,7 @@ ${result.recruiterImpression.criticalRedFlags.map(f => `- ${f}`).join('\n')}
             </div>
             <div>
               <h2 className="text-base font-bold text-white">Export ATS Audit Report</h2>
-              <p className="text-xs text-slate-400">Save your score breakdown and bullet rewrites</p>
+              <p className="text-xs text-slate-400">Save clean 1-page PDF summary or export markdown</p>
             </div>
           </div>
           <button
@@ -139,14 +139,27 @@ ${result.recruiterImpression.criticalRedFlags.map(f => `- ${f}`).join('\n')}
               </p>
             </div>
 
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-2 rounded bg-slate-950 border border-slate-800">
-                <span className="text-slate-400 block text-[10px]">Keywords Matched:</span>
-                <span className="font-semibold text-emerald-400">{result.keywords.matched.length} terms ({result.keywords.matchPercentage}%)</span>
+            <div className="p-3 rounded bg-slate-950 border border-slate-800 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-slate-400 block text-[10px] uppercase font-semibold">
+                  Candidate Skills &amp; Keywords ({result.keywords.matched.length}):
+                </span>
+                <span className="text-[10px] text-emerald-400 font-semibold">
+                  {result.keywords.matchPercentage}% Verified
+                </span>
               </div>
-              <div className="p-2 rounded bg-slate-950 border border-slate-800">
-                <span className="text-slate-400 block text-[10px]">Missing Keywords:</span>
-                <span className="font-semibold text-amber-400">{result.keywords.missing.length} high-priority terms</span>
+              <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
+                {result.keywords.matched.map((k) => (
+                  <span
+                    key={k.name}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 text-[10px] border border-emerald-500/20 font-medium"
+                  >
+                    <span>{k.name}</span>
+                    {k.frequency && k.frequency > 1 && (
+                      <span className="text-[9px] text-slate-400 font-mono">({k.frequency}x)</span>
+                    )}
+                  </span>
+                ))}
               </div>
             </div>
           </div>
@@ -183,7 +196,7 @@ ${result.recruiterImpression.criticalRedFlags.map(f => `- ${f}`).join('\n')}
               className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-md transition-all cursor-pointer"
             >
               <Printer className="w-3.5 h-3.5" />
-              Print / Save PDF
+              Print / Save PDF (1 Page)
             </button>
           </div>
         </div>

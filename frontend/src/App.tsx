@@ -27,8 +27,10 @@ import { RecruiterImpressionCard } from './components/RecruiterImpressionCard';
 import { SectionAuditCard } from './components/SectionAuditCard';
 import { JobRoleRecommendationsCard } from './components/JobRoleRecommendationsCard';
 import { FastApiModal } from './components/FastApiModal';
+import { createPortal } from 'react-dom';
 import { HistoryModal } from './components/HistoryModal';
 import { ExportModal } from './components/ExportModal';
+import { PrintableReport } from './components/PrintableReport';
 
 export default function App() {
   const [resumeText, setResumeText] = useState('');
@@ -476,27 +478,10 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-slate-800/80 bg-slate-950 py-6 text-xs text-slate-400 text-center">
-        <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-          <p>AI Resume Analyzer • Tailored for Python, FastAPI, and Modern Tech Stacks</p>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setIsFastApiModalOpen(true)}
-              className="hover:text-indigo-400 transition-colors cursor-pointer"
-            >
-              FastAPI & MongoDB Setup
-            </button>
-            <span>•</span>
-            <button
-              onClick={() => setIsHistoryModalOpen(true)}
-              className="hover:text-indigo-400 transition-colors cursor-pointer"
-            >
-              Previous Audits
-            </button>
-          </div>
-        </div>
-      </footer>
+      {/* Isolated Single-Page Printable Report Portal */}
+      {analysisResult && typeof document !== 'undefined' && document.getElementById('print-root') && (
+        createPortal(<PrintableReport result={analysisResult} />, document.getElementById('print-root')!)
+      )}
 
       {/* Modals */}
       <FastApiModal
