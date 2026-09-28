@@ -145,6 +145,18 @@ ACCESS_TOKEN_EXPIRE_MINUTES=60
 
 ---
 
+## Deploying to Render
+
+This application is fully optimized for 1-click deployment on [Render](https://render.com/) using the included [`render.yaml`](./render.yaml).
+
+- **Backend**: Deployed as a Python Web Service running FastAPI with automatic `$PORT` binding.
+- **Frontend**: Deployed as a high-speed Static Site served via Render's global CDN (100% Free).
+
+For the step-by-step walkthrough, see the [Render Deployment Guide](./RENDER_DEPLOYMENT.md).
+
+---
+
 ## License
 
 This project is licensed under the MIT License.
+

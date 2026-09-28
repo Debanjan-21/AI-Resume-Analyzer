@@ -1,0 +1,66 @@
+# ==============================================================================
+# Render Blueprint Configuration (render.yaml)
+# AI Resume Analyzer & ATS Optimizer
+# Docs: https://render.com/docs/blueprint-spec
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. Backend Service: FastAPI (Python 3.11)
+  # ----------------------------------------------------------------------------
+  - type: web
+    name: ai-resume-analyzer-backend
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+
+      # Google Gemini API Key for ATS insights and bullet point generation
+      - key: GEMINI_API_KEY
+        sync: false
+
+      # JWT Secret Key (Render automatically generates a secure cryptographic string)
+      - key: JWT_SECRET_KEY
+        generateValue: true
+
+      - key: JWT_ALGORITHM
+        value: HS256
+
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "60"
+
+      - key: DATABASE_NAME
+        value: ai_resume_analyzer
+
+      # Optional: MongoDB Atlas connection string (app includes automatic local store fallback)
+      - key: MONGODB_URL
+        sync: false
+
+      # Optional: Frontend URL for CORS and password reset emails
+      - key: FRONTEND_URL
+        sync: false
+
+  # ----------------------------------------------------------------------------
+  # 2. Frontend Service: React 18 + Vite + Tailwind CSS (Static Site CDN)
+  # ----------------------------------------------------------------------------
+  - type: web
+    name: ai-resume-analyzer-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    routes:
+      # SPA rewrite rule to ensure deep routes load index.html without 404
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      # URL of your deployed backend service (e.g. https://ai-resume-analyzer-backend.onrender.com)
+      - key: VITE_BACKEND_URL
+        sync: false

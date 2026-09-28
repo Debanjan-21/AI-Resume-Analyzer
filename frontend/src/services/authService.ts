@@ -1,7 +1,9 @@
 import { User, AuthState } from '../types';
 
 const STORAGE_KEY = 'resume_ai_auth';
-const BACKEND_URL = 'http://localhost:8000';
+const BACKEND_URL = (
+  (import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:8000') as string
+).replace(/\/$/, '');
 
 export async function loginUser(
   email: string,

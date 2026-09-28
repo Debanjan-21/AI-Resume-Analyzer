@@ -32,6 +32,10 @@ import { HistoryModal } from './components/HistoryModal';
 import { ExportModal } from './components/ExportModal';
 import { PrintableReport } from './components/PrintableReport';
 
+const DEFAULT_BACKEND_URL = (
+  (import.meta.env.VITE_BACKEND_URL || import.meta.env.VITE_API_URL || 'http://localhost:8000') as string
+).replace(/\/$/, '');
+
 export default function App() {
   const [resumeText, setResumeText] = useState('');
   const [jobDescription, setJobDescription] = useState('');
@@ -58,8 +62,13 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        const isDefaultLocal = !parsed.baseUrl || parsed.baseUrl === 'http://localhost:8000' || parsed.baseUrl === 'http://127.0.0.1:8000';
+        const targetBaseUrl = (isDefaultLocal && DEFAULT_BACKEND_URL !== 'http://localhost:8000')
+          ? DEFAULT_BACKEND_URL
+          : (parsed.baseUrl || DEFAULT_BACKEND_URL);
+
         return {
-          baseUrl: parsed.baseUrl || 'http://localhost:8000',
+          baseUrl: targetBaseUrl,
           endpointPath: parsed.endpointPath || '/api/analyze',
           useCustomBackend: true,
           apiKey: parsed.apiKey || undefined
@@ -67,7 +76,7 @@ export default function App() {
       } catch (e) {}
     }
     return {
-      baseUrl: 'http://localhost:8000',
+      baseUrl: DEFAULT_BACKEND_URL,
       endpointPath: '/api/analyze',
       useCustomBackend: true
     };
